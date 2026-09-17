@@ -1,0 +1,14 @@
+[Unit]
+Description=logishell button and key mappings
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/logishell daemon
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=120
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=default.target

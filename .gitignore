@@ -1,0 +1,6 @@
+/target/
+/.agents/
+/.codex/
+.env
+.env.*
+*.swp
