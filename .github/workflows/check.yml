@@ -21,7 +21,7 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
           components: rustfmt, clippy
-      - run: bash -n setup.sh uninstall.sh
+      - run: bash -n setup.sh uninstall.sh packaging/access.sh
       - if: matrix.toolchain == 'stable'
         run: cargo fmt --check
       - if: matrix.toolchain == 'stable'

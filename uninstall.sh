@@ -17,21 +17,45 @@ fi
 [[ $(uname -s) == Linux ]] || fail 'Linux is required.'
 [[ ${HOME:-} == /* && $HOME != / ]] || fail 'HOME must name your home directory.'
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+staging=$(mktemp -d)
+trap 'rm -rf -- "$staging"' EXIT
 service=$HOME/.local/share/systemd/user/logishell.service
 rules=()
-for rule in 70-logishell.rules 70-logishell-remap.rules; do
+own_access_rules=false
+preserved_access_rules=false
+for rule in 72-logishell.rules 72-logishell-remap.rules 70-logishell.rules 70-logishell-remap.rules; do
+    case $rule in
+        72-*) sed "s/@LOGISHELL_UID@/$EUID/g" "$repo/packaging/$rule.in" > "$staging/$rule" ;;
+        70-*) cp -- "$repo/packaging/legacy/$rule" "$staging/$rule" ;;
+    esac
     target=/etc/udev/rules.d/$rule
     if [[ -e $target || -L $target ]]; then
-        if [[ ! -L $target ]] && cmp -s "$repo/packaging/$rule" "$target"; then
+        if [[ -f $target && ! -L $target ]] && cmp -s "$staging/$rule" "$target"; then
             rules+=("$target")
+            [[ $rule != 72-* ]] || own_access_rules=true
         else
-            printf 'Keeping modified or unrecognized rule: %s\n' "$target" >&2
+            printf 'Keeping modified, unrecognized, or other-account rule: %s\n' "$target" >&2
+            [[ $rule != 72-* ]] || preserved_access_rules=true
         fi
     fi
 done
 if (( ${#rules[@]} )); then
     need sudo
     need udevadm
+fi
+remove_access_group=false
+if [[ $own_access_rules == true && $preserved_access_rules == false ]]; then
+    need getent
+    need id
+    . "$repo/packaging/access.sh"
+    if inspect_access_group; then
+        if [[ $access_group_present == true ]]; then
+            need groupdel
+            remove_access_group=true
+        fi
+    else
+        printf 'Keeping access group %s because its ownership could not be verified.\n' "$access_group" >&2
+    fi
 fi
 
 if [[ -e $service || -L $service ]]; then
@@ -55,6 +79,11 @@ rm -f -- "$HOME/.local/bin/logishell"
 if (( ${#rules[@]} )); then
     sudo rm -- "${rules[@]}"
     sudo udevadm control --reload-rules
-    printf 'Reconnect devices to refresh access. Reboot to clear existing virtual-input permissions.\n'
+    if [[ $remove_access_group == true &&
+        ! -e /etc/udev/rules.d/72-logishell.rules && ! -L /etc/udev/rules.d/72-logishell.rules &&
+        ! -e /etc/udev/rules.d/72-logishell-remap.rules && ! -L /etc/udev/rules.d/72-logishell-remap.rules ]]; then
+        sudo groupdel "$access_group"
+    fi
+    printf 'Reboot to remove remaining device ownership, permissions, and open handles.\n'
 fi
 printf 'logishell removed. Saved configuration, pairings, and hardware settings were kept.\n'

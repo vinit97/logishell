@@ -1,0 +1,4 @@
+# setup.sh grants machine-wide input injection to one explicitly trusted account.
+# Keep TAG removal separate: udev's static-node pass treats TAG-= as a tag to add.
+SUBSYSTEM=="misc", KERNEL=="uinput", TAG-="uaccess"
+SUBSYSTEM=="misc", KERNEL=="uinput", OWNER:="0", GROUP:="logishell-@LOGISHELL_UID@", MODE:="0660", OPTIONS+="static_node=uinput"

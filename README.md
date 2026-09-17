@@ -7,7 +7,7 @@ other devices may have limited support. See [device support](docs/devices.md).
 
 ## install
 
-Requires Linux with systemd and udev, Rust 1.88+, and a C compiler/linker.
+Requires Linux with systemd/udev 247+, Rust 1.88+, and a C compiler/linker.
 Run as your normal user:
 
 ```sh
@@ -16,8 +16,10 @@ cd logishell
 ./setup.sh
 ```
 
-The script installs `~/.local/bin/logishell`, device and virtual-input permissions,
-and the login service. It uses sudo for permissions and takes no options.
+The script installs `~/.local/bin/logishell` and the login service. With sudo,
+it grants the installing account raw device access and machine-wide virtual-input
+authority, including while that account is inactive. It takes no options.
+Reboot to activate access and start the login service.
 [Installation details](packaging/README.md).
 
 ## use
@@ -61,8 +63,8 @@ setting values and reset behavior. [AGENTS.md](AGENTS.md) has command guidance f
 ./uninstall.sh
 ```
 
-Removes the CLI, login service, and bundled permissions. Keeps configuration
-and pairings.
+Removes the CLI, login service, and recognized permission rules. Keeps configuration
+and pairings. Reboot afterward to finish removing device permissions.
 
 ## development
 
