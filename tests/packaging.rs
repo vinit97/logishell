@@ -10,24 +10,6 @@ use std::{
 const UID: &str = "1001";
 const GROUP: &str = "logishell-1001:x:991:fixture\n";
 const CURRENT: [&str; 2] = ["72-logishell.rules", "72-logishell-remap.rules"];
-const LEGACY: [&str; 2] = ["70-logishell.rules", "70-logishell-remap.rules"];
-// These are the released bytes, including the remap rule's final blank line.
-// Fixtures must not silently follow accidental edits to the migration references.
-const LEGACY_CONTENTS: [&str; 2] = [
-    r#"# Logitech USB devices and receivers (Bolt, Unifying, and other HID interfaces).
-# uaccess grants the active local seat user access to Logitech hidraw interfaces.
-# Feature discovery in logishell determines which operations each device supports.
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", TAG+="uaccess"
-
-# Logitech Bluetooth HID devices, without a product/model allowlist.
-SUBSYSTEM=="hidraw", KERNELS=="0005:046D:*", TAG+="uaccess"
-"#,
-    r#"# Optional: allow the active local seat user to create virtual input for button bindings.
-# This grants input injection, not just Logitech access. Install only if remapping is wanted.
-SUBSYSTEM=="misc", KERNEL=="uinput", TAG+="uaccess", OPTIONS+="static_node=uinput"
-
-"#,
-];
 
 // PATH contains only this dispatcher. Privileged commands never reach the host;
 // ordinary file changes are allowed only beneath this test's temporary root.
@@ -94,7 +76,7 @@ case $name in
     modprobe)
         [[ $* == uinput ]] || fail "$@"
         ;;
-    install|rm|mv|cp)
+    install|rm|mv)
         for argument in "$@"; do
             case $name:$argument in
                 install:-d|install:-m|install:-Dm|rm:-f|rm:-rf|mv:-fT|*:--) ;;
@@ -171,7 +153,6 @@ impl Installation {
             "install",
             "rm",
             "mv",
-            "cp",
             "mktemp",
             "dirname",
             "uname",
@@ -216,16 +197,10 @@ impl Installation {
     }
 
     fn expected(&self, rule: &str, uid: &str) -> Result<String> {
-        Ok(if CURRENT.contains(&rule) {
+        Ok(
             fs::read_to_string(self.repo.join("packaging").join(format!("{rule}.in")))?
-                .replace("@LOGISHELL_UID@", uid)
-        } else {
-            LEGACY_CONTENTS[LEGACY
-                .iter()
-                .position(|name| *name == rule)
-                .context("unknown legacy rule")?]
-            .to_owned()
-        })
+                .replace("@LOGISHELL_UID@", uid),
+        )
     }
 
     fn commands(&self) -> Result<String> {
@@ -341,32 +316,38 @@ fn installation_scopes_rules_to_one_uid_and_uninstalls_idempotently() -> Result<
 }
 
 #[test]
-fn exact_legacy_rules_are_migrated_or_removed() -> Result<()> {
-    for script in ["setup.sh", "uninstall.sh"] {
-        let installation = Installation::new()?;
-        for rule in LEGACY {
-            assert_eq!(
-                fs::read_to_string(installation.repo.join("packaging/legacy").join(rule))?,
-                installation.expected(rule, UID)?,
-                "legacy reference changed: {rule}"
-            );
-            fs::write(
-                installation.rules.join(rule),
-                installation.expected(rule, UID)?,
-            )?;
-        }
-        successful(&installation.run(script)?)?;
-        for rule in LEGACY {
-            assert!(!installation.rules.join(rule).exists());
-        }
-        for rule in CURRENT {
-            if script == "setup.sh" {
-                assert_eq!(
-                    fs::read_to_string(installation.rules.join(rule))?,
-                    installation.expected(rule, UID)?
-                );
+fn obsolete_rules_block_setup_and_are_preserved_by_uninstall() -> Result<()> {
+    for rule in ["70-logishell.rules", "70-logishell-remap.rules"] {
+        for dangling in [false, true] {
+            let installation = Installation::new()?;
+            let target = installation.rules.join(rule);
+            let missing = installation.temporary.path().join("missing");
+            if dangling {
+                symlink(&missing, &target)?;
             } else {
+                fs::write(&target, "# obsolete rule\n")?;
+            }
+            let output = installation.run("setup.sh")?;
+            assert!(!output.status.success());
+            assert!(
+                String::from_utf8_lossy(&output.stderr)
+                    .contains("Remove the old device-access rule")
+            );
+            for rule in CURRENT {
                 assert!(!installation.rules.join(rule).exists());
+            }
+            assert!(!installation.home.join(".local/bin/logishell").exists());
+            successful(&installation.run("uninstall.sh")?)?;
+            assert!(
+                !installation
+                    .commands()?
+                    .lines()
+                    .any(|line| { line.starts_with("sudo\t") || line.starts_with("cargo\t") })
+            );
+            if dangling {
+                assert_eq!(fs::read_link(&target)?, missing);
+            } else {
+                assert_eq!(fs::read_to_string(&target)?, "# obsolete rule\n");
             }
         }
     }
@@ -393,11 +374,8 @@ fn unsupported_udev_stops_before_build_or_installation() -> Result<()> {
 
 #[test]
 fn foreign_modified_and_symlinked_rules_are_never_replaced_or_removed() -> Result<()> {
-    for rule in CURRENT.into_iter().chain(LEGACY) {
+    for rule in CURRENT {
         for alteration in ["foreign", "modified", "symlink"] {
-            if alteration == "foreign" && LEGACY.contains(&rule) {
-                continue;
-            }
             let installation = Installation::new()?;
             fs::write(installation.temporary.path().join("group"), GROUP)?;
             let target = installation.rules.join(rule);

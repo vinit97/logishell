@@ -1,4 +1,0 @@
-# Optional: allow the active local seat user to create virtual input for button bindings.
-# This grants input injection, not just Logitech access. Install only if remapping is wanted.
-SUBSYSTEM=="misc", KERNEL=="uinput", TAG+="uaccess", OPTIONS+="static_node=uinput"
-

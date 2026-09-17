@@ -48,4 +48,4 @@ See [configuration examples](docs/automation.md).
 - Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test`.
 - Keep tests focused on distinct failure modes; extend existing cases instead of duplicating coverage across unit and integration tests.
 - Automated tests must not change host permissions, pair/unpair devices, or enable services.
-- Setup grants raw-device access only to the explicitly trusted installing UID. Never grant it to all seat users; legacy uaccess rules are migration references only.
+- Setup grants raw-device access only to the explicitly trusted installing UID. Never grant it to all seat users.

@@ -23,19 +23,16 @@ service=$HOME/.local/share/systemd/user/logishell.service
 rules=()
 own_access_rules=false
 preserved_access_rules=false
-for rule in 72-logishell.rules 72-logishell-remap.rules 70-logishell.rules 70-logishell-remap.rules; do
-    case $rule in
-        72-*) sed "s/@LOGISHELL_UID@/$EUID/g" "$repo/packaging/$rule.in" > "$staging/$rule" ;;
-        70-*) cp -- "$repo/packaging/legacy/$rule" "$staging/$rule" ;;
-    esac
+for rule in 72-logishell.rules 72-logishell-remap.rules; do
+    sed "s/@LOGISHELL_UID@/$EUID/g" "$repo/packaging/$rule.in" > "$staging/$rule"
     target=/etc/udev/rules.d/$rule
     if [[ -e $target || -L $target ]]; then
         if [[ -f $target && ! -L $target ]] && cmp -s "$staging/$rule" "$target"; then
             rules+=("$target")
-            [[ $rule != 72-* ]] || own_access_rules=true
+            own_access_rules=true
         else
             printf 'Keeping modified, unrecognized, or other-account rule: %s\n' "$target" >&2
-            [[ $rule != 72-* ]] || preserved_access_rules=true
+            preserved_access_rules=true
         fi
     fi
 done

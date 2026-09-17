@@ -28,14 +28,10 @@ for rule in "${rules[@]}"; do
         managed_group=true
     fi
 done
-legacy_rules=()
 for rule in 70-logishell.rules 70-logishell-remap.rules; do
     target=/etc/udev/rules.d/$rule
-    if [[ -e $target || -L $target ]]; then
-        [[ -f $target && ! -L $target ]] && cmp -s "$repo/packaging/legacy/$rule" "$target" ||
-            fail "Refusing to replace a different file: $target"
-        legacy_rules+=("$target")
-    fi
+    [[ ! -e $target && ! -L $target ]] ||
+        fail "Remove the old device-access rule before running setup: $target"
 done
 legacy_cargo=false
 if [[ -e $HOME/.cargo/bin/logishell || -L $HOME/.cargo/bin/logishell ]]; then
@@ -83,9 +79,6 @@ fi
 inspect_access_group || fail 'Refusing unsafe input-access group.'
 [[ $access_group_present == true ]] || fail 'Device-access group was not created.'
 sudo gpasswd --add "$access_user" "$access_group"
-if (( ${#legacy_rules[@]} )); then
-    sudo rm -- "${legacy_rules[@]}"
-fi
 sudo modprobe uinput
 sudo udevadm control --reload-rules
 sudo udevadm trigger --subsystem-match=misc --sysname-match=uinput

@@ -18,9 +18,11 @@ reboot, so it starts with the new access-group membership. Older Cargo installat
 the former service file in `~/.config/systemd/user` are migrated automatically.
 
 Setup refuses symlinked or modified permission rules and rules installed for
-another account. Exact older bundled rules are migrated automatically. Reboot
-after setup to activate group membership and clear existing device handles,
-ACLs, and cached udev tags that can retain access from older active-seat rules.
+another account. It also refuses installation while `70-logishell.rules` or
+`70-logishell-remap.rules` exists in `/etc/udev/rules.d`. For older active-seat
+installations, remove those rules with the original uninstaller or ask an
+administrator to remove them before running setup. Reboot afterward to activate
+the new group membership and clear access retained from the old rules.
 
 ## device access
 
@@ -72,10 +74,9 @@ another remapping controller for the same device at the same time.
 ```
 
 Uninstall stops/removes the service before removing the binary,
-then removes recognized rules for the installing account, including exact legacy
-rules, with sudo. Its private access group is removed when recognized current
-rules were removed and no modified or other-account rules remain. Stop any
-foreground daemon first.
+then removes recognized rules for the installing account with sudo.
+Its private access group is removed when recognized rules were removed and
+no modified or other-account rules remain. Stop any foreground daemon first.
 Saved configuration, pairings, and hardware settings stay intact. Repeated
 uninstall handles absent components and does not require Cargo.
 
