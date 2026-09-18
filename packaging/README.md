@@ -1,7 +1,7 @@
 # installation
 
 Linux with systemd/udev 247+, Rust 1.88+, and a C compiler/linker are required. The scripts do not
-install toolchains or system packages. The account tools `getent`, `groupadd`,
+install toolchains or system packages. The account tools `getent`, `groupadd`, `groupmod`,
 `gpasswd`, and `groupdel` must be available. Run as your normal user:
 
 ```sh
@@ -28,13 +28,22 @@ the new group membership and clear access retained from the old rules.
 
 The HID rules give the installing account raw read/write access to Logitech USB
 and Bluetooth interfaces, including receivers. Setup creates the system group
-`logishell-<UID>` with only that account as a supplementary member. Both HID and
+`logitech` with only that account as a supplementary member. Both HID and
 virtual-input nodes remain owned by root, with this group and mode `0660`,
 replacing active-seat access grants. Setup rejects an existing group with other
 members, another group sharing its numeric GID, or any account using it as a
 primary group. A preexisting group is accepted only with recognized rules from
 an earlier installation for the same account. Other users keep ordinary keyboard
 and mouse input.
+
+Each rule records the installing UID, so the common group name still belongs to
+one trusted account. Setup migrates recognized `logishell-<UID>` installations by
+renaming the group to `logitech`, preserving its numeric GID and membership. It
+refuses collisions with an existing `logitech` group. During migration,
+`/etc/udev/rules.d/.logishell-group-migration` records the UID and GID so setup or
+uninstall can resume after interruption; it is removed on completion. Unrecognized
+rules, groups, or migration records require administrator review. Per-user
+`logishell-<UID>` runtime directories keep their names.
 
 Installing these rules with sudo trusts every process running as that account
 to change supported devices and receivers and inject input into the machine.
@@ -75,8 +84,9 @@ another remapping controller for the same device at the same time.
 
 Uninstall stops/removes the service before removing the binary,
 then removes recognized rules for the installing account with sudo.
-Its private access group is removed when recognized rules were removed and
-no modified or other-account rules remain. Stop any foreground daemon first.
+Its exclusive `logitech` group (or recognized legacy `logishell-<UID>` group) is
+removed when recognized rules were removed and no modified or other-account
+rules remain. Stop any foreground daemon first.
 Saved configuration, pairings, and hardware settings stay intact. Repeated
 uninstall handles absent components and does not require Cargo.
 

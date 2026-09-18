@@ -1,4 +1,5 @@
 # setup.sh grants raw Logitech access to one explicitly trusted account.
+# logishell access owner UID: @LOGISHELL_UID@
 # Run after 70-uaccess.rules and before 73-seat-late.rules applies seat ACLs.
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", TAG-="uaccess", OWNER:="0", GROUP:="logishell-@LOGISHELL_UID@", MODE:="0660"
-SUBSYSTEM=="hidraw", KERNELS=="0005:046D:*", TAG-="uaccess", OWNER:="0", GROUP:="logishell-@LOGISHELL_UID@", MODE:="0660"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", TAG-="uaccess", OWNER:="0", GROUP:="logitech", MODE:="0660"
+SUBSYSTEM=="hidraw", KERNELS=="0005:046D:*", TAG-="uaccess", OWNER:="0", GROUP:="logitech", MODE:="0660"

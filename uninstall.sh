@@ -20,14 +20,17 @@ repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 staging=$(mktemp -d)
 trap 'rm -rf -- "$staging"' EXIT
 service=$HOME/.local/share/systemd/user/logishell.service
+need id
+source "$repo/packaging/access.sh"
+prepare_access_rules
 rules=()
 own_access_rules=false
 preserved_access_rules=false
-for rule in 72-logishell.rules 72-logishell-remap.rules; do
-    sed "s/@LOGISHELL_UID@/$EUID/g" "$repo/packaging/$rule.in" > "$staging/$rule"
+for rule in "${access_rules[@]}"; do
+    inspect_access_rule "$rule"
     target=/etc/udev/rules.d/$rule
-    if [[ -e $target || -L $target ]]; then
-        if [[ -f $target && ! -L $target ]] && cmp -s "$staging/$rule" "$target"; then
+    if [[ $access_rule_kind != absent ]]; then
+        if [[ $access_rule_kind != unrecognized ]]; then
             rules+=("$target")
             own_access_rules=true
         else
@@ -41,17 +44,21 @@ if (( ${#rules[@]} )); then
     need udevadm
 fi
 remove_access_group=false
-if [[ $own_access_rules == true && $preserved_access_rules == false ]]; then
+access_migration_present=false
+if [[ $preserved_access_rules == false &&
+    ( $own_access_rules == true || -e $access_migration || -L $access_migration ) ]]; then
     need getent
-    need id
-    . "$repo/packaging/access.sh"
-    if inspect_access_group; then
-        if [[ $access_group_present == true ]]; then
+    if inspect_access_installation; then
+        if [[ $access_migration_present == true ]]; then
+            need sudo
+        fi
+        if [[ -n $installed_access_group ]]; then
+            need sudo
             need groupdel
             remove_access_group=true
         fi
     else
-        printf 'Keeping access group %s because its ownership could not be verified.\n' "$access_group" >&2
+        printf 'Keeping access groups and migration record because ownership could not be verified.\n' >&2
     fi
 fi
 
@@ -76,11 +83,18 @@ rm -f -- "$HOME/.local/bin/logishell"
 if (( ${#rules[@]} )); then
     sudo rm -- "${rules[@]}"
     sudo udevadm control --reload-rules
-    if [[ $remove_access_group == true &&
-        ! -e /etc/udev/rules.d/72-logishell.rules && ! -L /etc/udev/rules.d/72-logishell.rules &&
-        ! -e /etc/udev/rules.d/72-logishell-remap.rules && ! -L /etc/udev/rules.d/72-logishell-remap.rules ]]; then
-        sudo groupdel "$access_group"
+fi
+if [[ ( $remove_access_group == true || $access_migration_present == true ) &&
+    ! -e /etc/udev/rules.d/72-logishell.rules && ! -L /etc/udev/rules.d/72-logishell.rules &&
+    ! -e /etc/udev/rules.d/72-logishell-remap.rules && ! -L /etc/udev/rules.d/72-logishell-remap.rules ]]; then
+    if [[ $remove_access_group == true ]]; then
+        sudo groupdel "$installed_access_group"
     fi
+    if [[ $access_migration_present == true ]]; then
+        sudo rm -- "$access_migration"
+    fi
+fi
+if (( ${#rules[@]} )) || [[ $remove_access_group == true ]]; then
     printf 'Reboot to remove remaining device ownership, permissions, and open handles.\n'
 fi
 printf 'logishell removed. Saved configuration, pairings, and hardware settings were kept.\n'

@@ -6,7 +6,7 @@ fail() { printf 'logishell: %s\n' "$*" >&2; exit 1; }
 [[ $EUID != 0 ]] || fail 'Run this script as your normal user, without sudo.'
 [[ $(uname -s) == Linux ]] || fail 'Linux is required.'
 [[ ${HOME:-} == /* && $HOME != / ]] || fail 'HOME must name your home directory.'
-for dependency in cargo sudo udevadm modprobe systemctl getent id groupadd gpasswd; do
+for dependency in cargo sudo udevadm modprobe systemctl getent id groupadd groupmod gpasswd; do
     command -v "$dependency" >/dev/null || fail "Required command not found: $dependency"
 done
 udev_version=$(udevadm --version)
@@ -17,16 +17,11 @@ source "$repo/packaging/access.sh"
 staging=$(mktemp -d)
 binary=
 trap 'rm -rf -- "$staging"; if [[ -n $binary ]]; then rm -f -- "$binary"; fi' EXIT
-rules=(72-logishell.rules 72-logishell-remap.rules)
-managed_group=false
-for rule in "${rules[@]}"; do
-    sed "s/@LOGISHELL_UID@/$EUID/g" "$repo/packaging/$rule.in" > "$staging/$rule"
-    target=/etc/udev/rules.d/$rule
-    if [[ -e $target || -L $target ]]; then
-        [[ -f $target && ! -L $target ]] && cmp -s "$staging/$rule" "$target" ||
-            fail "Refusing to replace a modified rule or another account's installation: $target"
-        managed_group=true
-    fi
+prepare_access_rules
+for rule in "${access_rules[@]}"; do
+    inspect_access_rule "$rule"
+    [[ $access_rule_kind != unrecognized ]] ||
+        fail "Refusing to replace a modified rule or another account's installation: /etc/udev/rules.d/$rule"
 done
 for rule in 70-logishell.rules 70-logishell-remap.rules; do
     target=/etc/udev/rules.d/$rule
@@ -51,9 +46,7 @@ for existing in "$service" "$legacy_service"; do
             fail "Refusing to replace a different file: $existing"
     fi
 done
-inspect_access_group || fail 'Refusing unsafe input-access group.'
-[[ $access_group_present == false || $managed_group == true ]] ||
-    fail "Refusing to adopt an existing group without recognized logishell rules: $access_group"
+inspect_access_installation || fail 'Refusing unsafe input-access installation.'
 systemctl --user show-environment >/dev/null
 
 cargo build --locked --release --manifest-path "$repo/Cargo.toml" --target-dir "$repo/target"
@@ -68,17 +61,34 @@ install -m 0755 "$repo/target/release/logishell" "$binary"
 mv -fT -- "$binary" "$HOME/.local/bin/logishell"
 printf 'Granting UID %s persistent raw Logitech and virtual-input access.\n' "$EUID"
 printf 'This account can control input across local sessions, including while inactive.\n'
-for rule in "${rules[@]}"; do
+if [[ $installed_access_group == "$legacy_access_group" ]]; then
+    if [[ $access_migration_present == false ]]; then
+        write_access_migration > "$staging/migration"
+        sudo install -m 0644 "$staging/migration" "$access_migration"
+        access_migration_present=true
+    fi
+    sudo groupmod --new-name "$access_group" "$legacy_access_group"
+    inspect_access_group "$access_group" || fail 'Refusing unsafe renamed input-access group.'
+    [[ $access_group_present == true && $access_group_gid == "$installed_access_gid" ]] ||
+        fail 'The renamed access group did not retain its numeric GID.'
+    installed_access_group=$access_group
+fi
+for rule in "${access_rules[@]}"; do
     sudo install -m 0644 "$staging/$rule" "/etc/udev/rules.d/$rule"
 done
 # Install the recognizable rules first so an interrupted group creation can be
 # retried without adopting an unrelated pre-existing group.
-if [[ $access_group_present == false ]]; then
+if [[ -z $installed_access_group ]]; then
     sudo groupadd --system "$access_group"
 fi
-inspect_access_group || fail 'Refusing unsafe input-access group.'
+inspect_access_group "$access_group" || fail 'Refusing unsafe input-access group.'
 [[ $access_group_present == true ]] || fail 'Device-access group was not created.'
+[[ -z $installed_access_gid || $access_group_gid == "$installed_access_gid" ]] ||
+    fail 'The access group changed its numeric GID during installation.'
 sudo gpasswd --add "$access_user" "$access_group"
+if [[ $access_migration_present == true ]]; then
+    sudo rm -- "$access_migration"
+fi
 sudo modprobe uinput
 sudo udevadm control --reload-rules
 sudo udevadm trigger --subsystem-match=misc --sysname-match=uinput
